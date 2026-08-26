@@ -1,0 +1,29 @@
+{
+  "name": "mcp-wtf",
+  "version": "0.1.0",
+  "description": "Your MCP server won't connect. Find out why in 10 seconds. Diagnoses every server in your Claude Desktop, Claude Code, Cursor and VS Code configs: missing commands, placeholder API keys, stdout pollution, silent crashes - with the exact fix for each. Zero dependencies.",
+  "keywords": [
+    "mcp", "model-context-protocol", "mcp-server", "troubleshooting", "doctor",
+    "diagnostics", "failed-to-connect", "disconnected", "debug", "claude",
+    "claude-desktop", "claude-code", "cursor", "cli", "fix"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "bin": { "mcp-wtf": "dist/cli.js" },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" }
+  },
+  "files": ["dist", "README.md", "LICENSE"],
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  }
+}

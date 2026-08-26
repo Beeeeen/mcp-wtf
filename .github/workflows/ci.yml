@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: node ${{ matrix.node }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node: ['18', '20', '22']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: node --test
+
+  dogfood:
+    name: diagnose real breakage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+
+      - name: A config full of realistic breakage must be fully diagnosed
+        run: |
+          cat > /tmp/broken.json <<'EOF'
+          {
+            "mcpServers": {
+              "placeholder": { "command": "node", "args": ["fixtures/healthy-server.js"], "env": { "API_TOKEN": "YOUR_TOKEN_HERE" } },
+              "ghost":       { "command": "definitely-not-installed-xyz", "args": [] },
+              "crashy":      { "command": "node", "args": ["fixtures/crashing-server.js"] },
+              "healthy":     { "command": "node", "args": ["fixtures/healthy-server.js"] }
+            }
+          }
+          EOF
+          set +e
+          node dist/cli.js --config /tmp/broken.json --json > report.json
+          status=$?
+          set -e
+          test "$status" -eq 1 || { echo "expected exit 1, got $status"; exit 1; }
+          node -e '
+            const r = require("./report.json");
+            const by = Object.fromEntries(r.diagnoses.map(d => [d.spec.name, d.findings.map(f => f.code)]));
+            const expect = (name, code) => {
+              if (!by[name].includes(code)) { console.error(`${name}: expected ${code}, got ${by[name]}`); process.exit(1); }
+            };
+            expect("placeholder", "env.placeholder");
+            expect("ghost", "cmd.not_found");
+            expect("crashy", "deps.module_missing");
+            if (r.healthy !== 1 || r.broken !== 3) { console.error(`bad summary: ${JSON.stringify(r)}`); process.exit(1); }
+            console.log("all diagnoses correct");
+          '

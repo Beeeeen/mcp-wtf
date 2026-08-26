@@ -1,0 +1,5 @@
+export { discover, readConfigFile, knownConfigPaths } from './discover.js'
+export { diagnoseServer, diagnoseAll, staticChecks, resolveCommand } from './diagnose.js'
+export { renderTerminal } from './report/terminal.js'
+export { McpClient, StdioTransport, HttpTransport } from './client/index.js'
+export type { Diagnosis, Finding, ServerSpec, Verdict, WtfOptions, WtfReport } from './types.js'
