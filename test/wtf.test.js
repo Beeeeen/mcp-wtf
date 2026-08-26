@@ -176,6 +176,24 @@ test('CLI --json reports verdicts and exits 1 when something is broken', () => {
   }
 })
 
+test('the same command with a different env is a different server', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'dedupe-'))
+  const cfg = join(dir, 'c.json')
+  writeFileSync(
+    cfg,
+    JSON.stringify({
+      mcpServers: {
+        'with-token': { command: 'node', args: ['s.js'], env: { TOKEN: 'real-value' } },
+        'no-token': { command: 'node', args: ['s.js'] },
+      },
+    }),
+  )
+  const { specs } = discover(cfg)
+  // Same command and args, different env: merging these would silently drop
+  // one server from the report -- the bug the dogfood CI job caught.
+  assert.equal(specs.length, 2, specs.map((s) => s.name).join(','))
+})
+
 test('CLI exits 0 when everything is healthy', () => {
   const dir = mkdtempSync(join(tmpdir(), 'wtf-'))
   const cfg = join(dir, 'c.json')

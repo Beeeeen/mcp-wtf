@@ -138,9 +138,15 @@ export function discover(explicitConfig?: string): {
     }
     for (const spec of readConfigFile(path, host)) {
       // Identity is what would actually run, not the display name -- two hosts
-      // pointing at the same command are one server.
+      // pointing at the same command are one server. The environment is part
+      // of what runs: the same command with a different env (one with a real
+      // token, one with a placeholder) is a different server, and merging
+      // them would silently drop one from the report.
+      const envKey = JSON.stringify(Object.entries(spec.env ?? {}).sort())
       const identity =
-        spec.kind === 'http' ? `http|${spec.url}` : `stdio|${spec.command}|${(spec.args ?? []).join(' ')}`
+        spec.kind === 'http'
+          ? `http|${spec.url}`
+          : `stdio|${spec.command}|${(spec.args ?? []).join(' ')}|${envKey}|${spec.cwd ?? ''}`
       const existing = byIdentity.get(identity)
       if (existing) existing.sources.push(...spec.sources)
       else byIdentity.set(identity, spec)
