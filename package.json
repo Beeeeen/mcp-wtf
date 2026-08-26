@@ -56,5 +56,6 @@
   "homepage": "https://github.com/Beeeeen/mcp-wtf#readme",
   "bugs": {
     "url": "https://github.com/Beeeeen/mcp-wtf/issues"
-  }
+  },
+  "author": "Ben Yang <ben@yangjiawei.com>"
 }
