@@ -1,7 +1,7 @@
 {
   "name": "mcp-wtf",
-  "version": "0.1.0",
-  "description": "Your MCP server won't connect. Find out why in 10 seconds. Diagnoses every server in your Claude Desktop, Claude Code, Cursor and VS Code configs: missing commands, placeholder API keys, stdout pollution, silent crashes - with the exact fix for each. Zero dependencies.",
+  "version": "0.2.0",
+  "description": "Your MCP server won't connect. Find out why in 10 seconds. Diagnoses every server in your Claude Desktop, Claude Code, Cursor, VS Code, Cline, Zed and Gemini CLI configs - local and remote: missing commands, placeholder API keys, stdout pollution, silent crashes, 401 Unauthorized, expired certificates, wrong /mcp or /sse endpoints - with the exact fix for each. Reads your host's log files too. Zero dependencies.",
   "keywords": [
     "mcp",
     "model-context-protocol",
@@ -16,6 +16,14 @@
     "claude-desktop",
     "claude-code",
     "cursor",
+    "cline",
+    "zed",
+    "remote-mcp",
+    "streamable-http",
+    "sse",
+    "oauth",
+    "401",
+    "logs",
     "cli",
     "fix"
   ],
