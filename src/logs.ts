@@ -1,6 +1,6 @@
 import { closeSync, existsSync, fstatSync, openSync, readSync, readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { basename, join } from 'node:path'
+import { join, win32 } from 'node:path'
 import { classifyStderr } from './diagnose.js'
 import { quoteLine } from './redact.js'
 import type { Diagnosis, Finding, ServerSpec } from './types.js'
@@ -37,7 +37,9 @@ export function knownLogDirs(platform = process.platform, home = homedir()): Arr
  * server as the file they were rotated out of.
  */
 export function serverNameFromLogPath(path: string): string {
-  const file = basename(path)
+  // win32.basename splits on both separators, so a Windows path pasted into a
+  // report parses the same on every OS; posix basename would keep `C:\...`.
+  const file = win32.basename(path)
   const named = file.match(/^mcp-server-(.+?)\d*\.log(?:\.\d+)?$/i)
   if (named?.[1]) return named[1]
   return /^mcp\d*\.log/i.test(file) ? '(host log)' : file.replace(/\.log(\.\d+)?$/i, '')
