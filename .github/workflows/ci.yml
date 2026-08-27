@@ -66,3 +66,45 @@ jobs:
             if (r.healthy !== 1 || r.broken !== 3) { console.error(`bad summary: ${JSON.stringify(r)}`); process.exit(1); }
             console.log("all diagnoses correct");
           '
+
+      - name: A host log full of realistic breakage must be classified per server
+        run: |
+          mkdir -p /tmp/logs
+          cat > /tmp/logs/mcp-server-github.log <<'EOF'
+          2025-08-20T10:00:00.000Z [github] [info] Initializing server...
+          2025-08-20T10:00:00.100Z [github] [error] spawn npx ENOENT
+          2025-08-20T10:00:00.200Z [github] [error] Server disconnected. See the debugging documentation
+          EOF
+          cat > /tmp/logs/mcp.log <<'EOF'
+          2025-08-20T10:01:00.000Z [info] [memory] Message from client: {"method":"tools/call","params":{"q":"spawn npx ENOENT"}}
+          2025-08-20T10:01:01.000Z [error] [memory] Unexpected token 'I', "[INFO] boo"... is not valid JSON
+          EOF
+          set +e
+          node dist/cli.js --logs /tmp/logs/mcp-server-github.log --logs /tmp/logs/mcp.log --json > logs.json
+          status=$?
+          set -e
+          test "$status" -eq 1 || { echo "expected exit 1, got $status"; exit 1; }
+          node -e '
+            const r = require("./logs.json");
+            const by = Object.fromEntries(r.diagnoses.map(d => [d.spec.name, d.findings.map(f => f.code)]));
+            if (!by.github?.includes("cmd.not_found")) { console.error(`github: got ${by.github}`); process.exit(1); }
+            // The symptom must lose to the cause, and tool arguments are not evidence.
+            if (by.github.includes("transport.closed")) { console.error("symptom outranked the cause"); process.exit(1); }
+            if (!by.memory?.includes("stdio.pollution")) { console.error(`memory: got ${by.memory}`); process.exit(1); }
+            if (by.memory.length !== 1) { console.error(`memory read mirrored traffic as evidence: ${by.memory}`); process.exit(1); }
+            console.log("all log findings correct");
+          '
+
+      - name: A URL that is not an MCP endpoint must be diagnosed, not merely failed
+        run: |
+          set +e
+          node dist/cli.js --url http://127.0.0.1:45999/mcp --timeout 5000 --json > remote.json
+          status=$?
+          set -e
+          test "$status" -eq 1 || { echo "expected exit 1, got $status"; exit 1; }
+          node -e '
+            const r = require("./remote.json");
+            const codes = r.diagnoses[0].findings.map(f => f.code);
+            if (!codes.includes("net.connection_refused")) { console.error(`got ${codes}`); process.exit(1); }
+            console.log("remote diagnosis correct");
+          '
