@@ -28,13 +28,19 @@ export function renderTerminal(report: WtfReport): string {
 
   lines.push('')
   const dead = report.broken
-  const headline =
-    dead === 0
-      ? `all ${diagnoses.length} MCP server${diagnoses.length === 1 ? '' : 's'} are alive`
-      : `${dead} of ${diagnoses.length} MCP server${diagnoses.length === 1 ? '' : 's'} ${dead === 1 ? 'is' : 'are'} broken -- here is exactly why`
+  const n = diagnoses.length
+  const logMode = report.mode === 'logs'
+  const headline = logMode
+    ? dead === 0
+      ? `no known failures in the last ${n} log file${n === 1 ? '' : 's'}`
+      : `${dead} of ${n} server${n === 1 ? '' : 's'} failed in the logs -- here is what the host wrote down`
+    : dead === 0
+      ? `all ${n} MCP server${n === 1 ? '' : 's'} are alive`
+      : `${dead} of ${n} MCP server${n === 1 ? '' : 's'} ${dead === 1 ? 'is' : 'are'} broken -- here is exactly why`
   lines.push(`  ${c.bold}mcp-wtf${c.reset}  ${headline}`)
+  const scanned = logMode ? (report.logsScanned ?? []).length : report.configsSearched.length
   lines.push(
-    `  ${c.gray}${report.configsSearched.length} config${report.configsSearched.length === 1 ? '' : 's'} searched${report.configErrors.length ? `, ${report.configErrors.length} unreadable` : ''}${c.reset}`,
+    `  ${c.gray}${scanned} ${logMode ? 'log file' : 'config'}${scanned === 1 ? '' : 's'} ${logMode ? 'read' : 'searched'}${report.configErrors.length ? `, ${report.configErrors.length} unreadable` : ''}${c.reset}`,
   )
   lines.push('')
 
@@ -77,7 +83,7 @@ export function renderTerminal(report: WtfReport): string {
   const parts: string[] = []
   if (report.broken) parts.push(`${c.red}${report.broken} broken${c.reset}`)
   if (report.warnings) parts.push(`${c.yellow}${report.warnings} with warnings${c.reset}`)
-  if (report.healthy) parts.push(`${c.green}${report.healthy} healthy${c.reset}`)
+  if (report.healthy) parts.push(`${c.green}${report.healthy} ${logMode ? 'clean' : 'healthy'}${c.reset}`)
   lines.push(`  ${c.gray}${'-'.repeat(64)}${c.reset}`)
   lines.push(`  ${parts.join(`${c.gray}  |  ${c.reset}`)}   ${c.gray}${(report.durationMs / 1000).toFixed(1)}s${c.reset}`)
   lines.push('')
