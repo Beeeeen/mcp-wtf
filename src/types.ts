@@ -11,10 +11,14 @@ export interface JsonSchema {
   [k: string]: unknown
 }
 
-/** One MCP server as found in a host config file (or given on the CLI). */
+/**
+ * One MCP server as found in a host config file (or given on the CLI). `log`
+ * is a server we only know from a host's log file: there is nothing to launch,
+ * just failures already recorded against its name.
+ */
 export interface ServerSpec {
   name: string
-  kind: 'stdio' | 'http'
+  kind: 'stdio' | 'http' | 'log'
   command?: string
   args?: string[]
   env?: Record<string, string>
@@ -59,6 +63,9 @@ export interface WtfReport {
   configsSearched: string[]
   /** Config files that exist but could not be parsed, with the parse error. */
   configErrors: Array<{ path: string; error: string }>
+  /** Set in --logs mode: what was read instead of configs. */
+  mode?: 'config' | 'logs'
+  logsScanned?: string[]
   healthy: number
   broken: number
   warnings: number

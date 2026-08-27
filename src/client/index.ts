@@ -1,6 +1,7 @@
 import type { Transport } from './transport.js'
 import type { JsonRpcResponse } from './jsonrpc.js'
 import type { ToolDef } from '../types.js'
+import { VERSION } from '../version.js'
 
 export { StdioTransport } from './stdio.js'
 export { HttpTransport } from './http.js'
@@ -43,7 +44,7 @@ export class McpClient {
       {
         protocolVersion,
         capabilities: { roots: { listChanged: true }, sampling: {}, elicitation: {} },
-        clientInfo: { name: 'mcp-wtf', version: '0.1.0' },
+        clientInfo: { name: 'mcp-wtf', version: VERSION },
       },
       this.timeoutMs,
     )

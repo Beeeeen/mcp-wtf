@@ -1,6 +1,7 @@
 import { existsSync, statSync } from 'node:fs'
 import { delimiter, isAbsolute, join } from 'node:path'
-import { McpClient, StdioTransport, HttpTransport, type Transport } from './client/index.js'
+import { McpClient, StdioTransport, type Transport } from './client/index.js'
+import { probeRemote } from './remote.js'
 import type { Diagnosis, Finding, ServerSpec, WtfOptions } from './types.js'
 
 // ---------------------------------------------------------------------------
@@ -54,6 +55,61 @@ function configFileOf(spec: ServerSpec): string {
   return m?.[1] ?? 'your MCP config file'
 }
 
+/**
+ * What can be decided about a remote server without opening a socket. The
+ * headers block is the remote equivalent of `env`: the same pasted-and-never-
+ * replaced placeholders end up in it, and the same rule applies -- name the
+ * header, never the value.
+ */
+function remoteStaticChecks(spec: ServerSpec, cfg: string): Finding[] {
+  const findings: Finding[] = []
+  const url = spec.url ?? ''
+  let parsed: URL | null = null
+  try {
+    parsed = new URL(url)
+  } catch {
+    /* Reported below; `fetch` would fail with an opaque TypeError. */
+  }
+
+  if (!parsed) {
+    findings.push({
+      code: 'config.url_invalid',
+      severity: 'fatal',
+      message: `"${url}" is not a usable URL.`,
+      fix: `A remote MCP server needs the scheme too: "url": "https://example.com/mcp", not "example.com/mcp". (Config: ${cfg})`,
+    })
+    return findings
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    findings.push({
+      code: 'config.url_invalid',
+      severity: 'fatal',
+      message: `The URL uses the "${parsed.protocol.replace(':', '')}" scheme, which no MCP transport speaks.`,
+      fix: `Remote MCP is http:// or https:// only. Fix the "url" for this server in ${cfg}.`,
+    })
+  }
+
+  for (const [key, value] of Object.entries(spec.headers ?? {})) {
+    const bare = value.replace(/^(bearer|basic|token)\s+/i, '')
+    if (PLACEHOLDER.test(bare)) {
+      findings.push({
+        code: 'header.placeholder',
+        severity: 'fatal',
+        message: `The "${key}" header is still the placeholder value from the instructions.`,
+        fix: `Put the real credential into the "headers" block of this server in ${cfg}. As configured, the server will answer 401.`,
+      })
+    } else if (SECRET_KEY.test(key) && bare.trim() === '') {
+      findings.push({
+        code: 'header.empty_secret',
+        severity: 'fatal',
+        message: `The "${key}" header is empty.`,
+        fix: `Set it in ${cfg}, or remove the header entirely so the server can answer with a proper auth challenge.`,
+      })
+    }
+  }
+  return findings
+}
+
 export function staticChecks(spec: ServerSpec): Finding[] {
   const findings: Finding[] = []
   const cfg = configFileOf(spec)
@@ -68,7 +124,8 @@ export function staticChecks(spec: ServerSpec): Finding[] {
     return findings
   }
 
-  if (spec.kind === 'http') return findings
+  if (spec.kind === 'http') return remoteStaticChecks(spec, cfg)
+  if (spec.kind !== 'stdio') return findings
 
   const command = spec.command!
 
@@ -140,12 +197,12 @@ export function staticChecks(spec: ServerSpec): Finding[] {
 /** Known stderr signatures, most specific first. */
 const STDERR_SIGNATURES: Array<[RegExp, (m: RegExpMatchArray, cfg: string, command: string) => Finding]> = [
   [
-    /Cannot find module '([^']+)'|ERR_MODULE_NOT_FOUND.*?'([^']+)'/,
+    /Cannot find module '([^']+)'|ERR_MODULE_NOT_FOUND.*?'([^']+)'|ModuleNotFoundError: No module named '([^']+)'/,
     (m, cfg) => ({
       code: 'deps.module_missing',
       severity: 'fatal',
-      message: `The server crashed because a module is missing: ${m[1] ?? m[2]}.`,
-      fix: `Its dependencies are not installed. If this is your own server, run npm install in its directory; if it is configured with a path into someone's repo, that checkout was never built. (Config: ${cfg})`,
+      message: `The server crashed because a module is missing: ${m[1] ?? m[2] ?? m[3]}.`,
+      fix: `Its dependencies are not installed. If this is your own server, run npm install (or pip install / uv sync) in its directory; if it is configured with a path into someone's repo, that checkout was never built. (Config: ${cfg})`,
     }),
   ],
   [
@@ -198,7 +255,8 @@ const STDERR_SIGNATURES: Array<[RegExp, (m: RegExpMatchArray, cfg: string, comma
   ],
 ]
 
-function classifyStderr(stderr: string[], cfg: string, command: string): Finding | null {
+/** Exported so log-file mode can run the same signatures over host logs. */
+export function classifyStderr(stderr: string[], cfg: string, command: string): Finding | null {
   const text = stderr.join('\n')
   for (const [pattern, build] of STDERR_SIGNATURES) {
     const m = text.match(pattern)
@@ -208,13 +266,19 @@ function classifyStderr(stderr: string[], cfg: string, command: string): Finding
 }
 
 async function liveCheck(spec: ServerSpec, options: WtfOptions): Promise<{ findings: Finding[]; serverInfo?: Diagnosis['serverInfo']; toolCount?: number; connectMs?: number }> {
+  // A remote server has no process to watch: its whole story is one HTTP
+  // response, so it gets its own reader.
+  if (spec.kind === 'http') return probeRemote(spec, options)
+
   const cfg = configFileOf(spec)
   const findings: Finding[] = []
 
-  const transport: Transport =
-    spec.kind === 'http'
-      ? new HttpTransport({ url: spec.url!, headers: spec.headers })
-      : new StdioTransport({ command: spec.command!, args: spec.args ?? [], env: spec.env, cwd: spec.cwd })
+  const transport: Transport = new StdioTransport({
+    command: spec.command!,
+    args: spec.args ?? [],
+    env: spec.env,
+    cwd: spec.cwd,
+  })
   const client = new McpClient(transport, options.timeoutMs)
 
   const stderrTail = () => transport.stderr.slice(-12).join('\n')
@@ -327,6 +391,16 @@ async function liveCheck(spec: ServerSpec, options: WtfOptions): Promise<{ findi
 
 // ---------------------------------------------------------------------------
 
+/**
+ * `info` findings are notes on a server that works -- "the handshake took 12s",
+ * "this endpoint is fine, so your client is not". They print, but they must not
+ * downgrade a healthy verdict, or the summary line starts lying.
+ */
+function verdictOf(findings: Finding[]): Diagnosis['verdict'] {
+  if (findings.some((f) => f.severity === 'fatal')) return 'broken'
+  return findings.some((f) => f.severity === 'warn') ? 'warning' : 'healthy'
+}
+
 export async function diagnoseServer(spec: ServerSpec, options: WtfOptions): Promise<Diagnosis> {
   const findings = staticChecks(spec)
   const fatalAlready = findings.some((f) => f.severity === 'fatal')
@@ -340,18 +414,19 @@ export async function diagnoseServer(spec: ServerSpec, options: WtfOptions): Pro
       const filtered = fatalAlready ? live.findings.filter((f) => f.code !== 'spawn.failed') : live.findings
       findings.push(...filtered)
       if (live.serverInfo !== undefined) {
-        const verdict = findings.some((f) => f.severity === 'fatal') ? 'broken' : findings.length > 0 ? 'warning' : 'healthy'
-        return { spec, verdict, findings, serverInfo: live.serverInfo, toolCount: live.toolCount, connectMs: live.connectMs }
+        return {
+          spec,
+          verdict: verdictOf(findings),
+          findings,
+          serverInfo: live.serverInfo,
+          toolCount: live.toolCount,
+          connectMs: live.connectMs,
+        }
       }
     }
   }
 
-  const verdict: Diagnosis['verdict'] = findings.some((f) => f.severity === 'fatal')
-    ? 'broken'
-    : findings.length > 0
-      ? 'warning'
-      : 'healthy'
-  return { spec, verdict, findings }
+  return { spec, verdict: verdictOf(findings), findings }
 }
 
 export async function diagnoseAll(specs: ServerSpec[], options: WtfOptions): Promise<Diagnosis[]> {
