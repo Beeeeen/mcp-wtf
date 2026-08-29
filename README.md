@@ -199,6 +199,10 @@ The rest of the toolchain, built on the same zero-dependency MCP client:
 
 mcp-wtf answers "why won't it connect", context-xray answers "what is it costing me", mcp-probe answers "will it break my users".
 
+## Newsletter
+
+**[Agent Receipts](https://receipts.yangjiawei.com)** — weekly, first-hand numbers from building and shipping tools like this one: what I measured, what broke, and what I got wrong. [Subscribe](https://receipts.yangjiawei.com/subscribe).
+
 ## License
 
 MIT
